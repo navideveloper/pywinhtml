@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <title>Example</title>
+  <style>
+    html,
+    * {
+      box-sizing: border-box;
+      margin: 0;
+    }
+    body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      font: 14px "Segoe UI", system-ui, sans-serif;
+      color: #1f1f26;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      background: none;
+      border: 0;
+      cursor: pointer;
+    }
+
+    /* title bar */
+    .bar {
+      display: flex;
+      align-items: center;
+      height: 40px;
+      padding-left: 14px;
+      border-bottom: 1px solid #e6e6e3;
+    }
+
+    .bar .drag {
+      flex: 1;
+      align-self: stretch;
+    }
+
+    /* drag the window here */
+    .bar button {
+      width: 44px;
+      align-self: stretch;
+      color: #7b7b83;
+    }
+
+    .bar button:hover {
+      background: #f3f3f1;
+    }
+
+    .bar .x:hover {
+      background: #e81123;
+      color: #fff;
+    }
+
+    main {
+      flex: 1;
+      padding: 24px;
+    }
+
+    input {
+      padding: 7px 10px;
+      border: 1px solid #d8d8d4;
+      border-radius: 6px;
+    }
+
+    .go {
+      padding: 7px 14px;
+      border-radius: 6px;
+      background: #1f1f26;
+      color: #fff;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="bar">
+    <b>Program</b>
+    <div class="drag" data-win="drag"></div>
+    <button data-win="minimize" aria-label="Minimize"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M5 12h14" />
+      </svg></button>
+
+    <button data-win="toggle" aria-label="Maximize"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round">
+        <rect x="5" y="5" width="14" height="14" rx="1" />
+      </svg></button>
+
+    <button class="x" data-win="close" aria-label="Close"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M6 6l12 12" />
+        <path d="M18 6L6 18" />
+      </svg></button>
+  </div>
+
+  <main>
+    <h2>Hello!</h2>
+
+    <input id="name" value="Bob" />
+    <button class="go" data-win-call="greet" data-win-from="#name" data-win-target="#answer">
+      Greet
+    </button>
+
+    <p id="answer"></p>
+  </main>
+
+</body>
+
+</html>

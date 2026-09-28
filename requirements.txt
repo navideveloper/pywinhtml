@@ -1,0 +1,10 @@
+pywebview==6.2.1
+
+# pre-installed
+pythonnet==3.1.0
+clr_loader==0.3.1
+cffi==2.1.1
+pycparser==3.0
+bottle==0.13.4
+proxy_tools==0.1.0
+typing_extensions==4.16.0
