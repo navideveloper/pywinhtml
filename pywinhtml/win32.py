@@ -53,6 +53,9 @@ MONITOR_DEFAULTTONEAREST = 2
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMWA_BORDER_COLOR             = 34
 DWMWCP_ROUND                   = 2
+# Special COLORREF values Windows accepts for DWMWA_BORDER_COLOR.
+DWMWA_COLOR_DEFAULT = 0xFFFFFFFF
+DWMWA_COLOR_NONE    = 0xFFFFFFFE
 
 # One frame at ~120 Hz; the gesture loop runs at this rate.
 GESTURE_TICK = 0.008
@@ -159,9 +162,16 @@ def _left_button_down():
 
 
 def _colorref(value):
-    """Turn "#RRGGBB" into a COLORREF (0x00BBGGRR)."""
+    """Turn a border colour into a COLORREF (0x00BBGGRR).
+
+    None means no border at all, "default" leaves Windows its own colour.
+    """
+    if value is None:
+        return DWMWA_COLOR_NONE
     if isinstance(value, int):
         return value
+    if str(value).strip().lower() == "default":
+        return DWMWA_COLOR_DEFAULT
     text = str(value).lstrip("#")
     if len(text) == 3:
         text = "".join(ch * 2 for ch in text)
@@ -201,8 +211,7 @@ class WindowShell:
 
         if self.rounded:
             self._dwm_int(DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)
-        if self.border_color:
-            self._dwm_int(DWMWA_BORDER_COLOR, _colorref(self.border_color))
+        self._dwm_int(DWMWA_BORDER_COLOR, _colorref(self.border_color))
 
         # No caption, but keep WS_THICKFRAME so the window can still be sized.
         # WS_VISIBLE must be preserved or the window disappears.
@@ -232,7 +241,7 @@ class WindowShell:
         self._proc_ref = None
 
     def _dwm_int(self, attribute, value):
-        data = ctypes.c_int(value)
+        data = ctypes.c_uint(value & 0xFFFFFFFF)
         dwmapi.DwmSetWindowAttribute(wintypes.HWND(self.hwnd), ctypes.c_uint(attribute),
                                      ctypes.byref(data), ctypes.sizeof(data))
 
@@ -320,6 +329,11 @@ class WindowShell:
 
         Once the frame is gone the client area equals the window area, so the
         size WinForms picked (which still allowed for a frame) is corrected here.
+
+        It is applied as two steps on purpose. WebView2 only lays the page out
+        again when the client area really changes, so on the first open the
+        page would otherwise keep the viewport it was given before the frame
+        was stripped and leave an unpainted band along the bottom edge.
         """
         if not self._alive() or self.is_maximized():
             return
@@ -328,13 +342,20 @@ class WindowShell:
 
         rect = _window_rect(self.hwnd)
         have_w, have_h = rect.right - rect.left, rect.bottom - rect.top
-        if (have_w, have_h) == (want_w, want_h):
-            return
-
         x = rect.left + (have_w - want_w) // 2
         y = rect.top + (have_h - want_h) // 2
-        user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h,
-                            SWP_NOZORDER | SWP_FRAMECHANGED)
+        flags = SWP_NOZORDER | SWP_FRAMECHANGED
+
+        def apply():
+            user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h + 1, flags)
+            user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h, flags)
+
+        self._placed = None
+        invoker = self.invoker
+        if invoker is None:
+            apply()
+        else:
+            invoker(apply)
 
     # --- mouse gestures --------------------------------------------------
     def begin_drag(self):

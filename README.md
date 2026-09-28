@@ -57,8 +57,18 @@ app.run()
 The HTML path is resolved next to the file that calls `App(...)`, not the
 working directory, so the app runs from anywhere.
 
-Extra keyword arguments: `title=`, `debug=True` (DevTools), `rounded=False`,
-`border_color="#DDDDDD"`.
+Extra keyword arguments: `title=`, `debug=True` (DevTools), `rounded=False`
+(square corners instead of rounded), and `border_color=`.
+
+The border is a 1px line drawn by Windows itself, not by the page, so CSS
+cannot paint over it:
+
+| `border_color=` | Result |
+| --- | --- |
+| `"#DDDDDD"` | the default, a light grey line |
+| any `"#RRGGBB"` | that colour |
+| `None` | no border at all |
+| `"default"` | whatever Windows would use on its own |
 
 ## Python side
 
@@ -158,3 +168,9 @@ The window title comes from the page's `<title>`.
 | `example.html` | the example page |
 | `main.py` | runs the example |
 | `app.py` | the old single-file prototype, superseded - safe to delete |
+
+
+# using pyinstaller
+```bash
+pyinstaller main.py --name main --noconsole --noconfirm --contents-directory . --add-data "*.html;." --add-data "pywinhtml/runtime.js;pywinhtml" --collect-all webview --collect-all clr_loader
+```
