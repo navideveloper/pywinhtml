@@ -26,9 +26,9 @@ Run the example:
 `main.py`:
 
 ```python
-import pywinhtml as k
+import pywinhtml as win
 
-app = k.App("example.html", "#FFFFFF", 900, 600, 700, 480)
+app = win.App("example.html", "#FFFFFF", 900, 600, 700, 480)
 #            html            bgcolor   width height  min_width min_height
 
 @app.event.on
@@ -130,11 +130,6 @@ Classes put on `<html>` for your CSS:
 - `win-max` - the window is maximized, handy for swapping the icon
 
 The window title comes from the page's `<title>`.
-
-## Renaming
-
-Rename the `pywinhtml/` folder and `import new_name as k` works; no package
-name is hard-coded inside it.
 
 ## Notes on how it works
 
