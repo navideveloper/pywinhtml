@@ -27,6 +27,9 @@ RUNTIME_JS = os.path.join(HERE, "runtime.js")
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 
+# Device pixels the browser is allowed to paint past the bottom edge.
+BROWSER_OVERHANG = 1
+
 
 def _caller_dir(depth=2):
     """Directory of the file that called App(), not the working directory."""
@@ -60,6 +63,41 @@ def _normalize_color(value):
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", text):
         raise ValueError("bgcolor must look like '#RRGGBB', got %r" % (value,))
     return text.upper()
+
+
+def _browser_stretcher(native, hwnd):
+    """Make the browser paint one row below the window's bottom edge.
+
+    WebView2 leaves its last device-pixel row composited with almost no alpha
+    - a bright green page renders it as (0, 1, 0) - which shows up as a black
+    hairline along the bottom. It grows to several rows while a text field has
+    focus. Letting the control hang one pixel past the client area puts that
+    row outside what Windows draws, and the row you see is a painted one.
+
+    Returns None when the form cannot be adjusted, and the caller then leaves
+    the layout alone.
+    """
+    try:
+        from webview.platforms import winforms as backend
+    except ImportError:
+        return None
+
+    controls = list(getattr(native, "Controls", []) or [])
+    if not controls:
+        return None
+    browser = controls[0]
+    undocked = getattr(backend.WinForms.DockStyle, "None")
+
+    def stretch():
+        if getattr(native, "IsDisposed", False):
+            return
+        width, height = win32.client_size(hwnd)
+        if width <= 0 or height <= 0:
+            return
+        browser.Dock = undocked
+        browser.SetBounds(0, 0, width, height + BROWSER_OVERHANG)
+
+    return stretch
 
 
 def _ui_invoker(native):
@@ -313,6 +351,10 @@ class _Bridge:
         if shell:
             shell.end_gesture()
 
+    def ready(self):
+        """Called once by the runtime as soon as the page is up."""
+        self._app._apply_initial_size()
+
     def state(self):
         return {"maximized": self._app.page.is_maximized()}
 
@@ -356,6 +398,7 @@ class App:
         self._bridge = _Bridge(self)
         self._window = None
         self._shell = None
+        self._sized = False
         self._ready_hooks = []
         self._close_hooks = []
         self._lock = threading.Lock()
@@ -416,11 +459,27 @@ class App:
                         invoker=_ui_invoker(native),
                     )
                     self._shell.attach()
-                    self._shell.apply_size(self.width, self.height)
+                    stretch = _browser_stretcher(native, hwnd)
+                    if stretch is not None:
+                        self._shell.resize_hook = stretch
+                        invoke = self._shell.invoker
+                        invoke(stretch) if invoke else stretch()
 
         self.page._inject_runtime()
         for hook in self._ready_hooks:
             hook()
+
+    def _apply_initial_size(self):
+        """Give the window its requested size, once, when the page reports in.
+
+        The page is the trigger on purpose: sizing during the load event is
+        still early enough for WinForms to override it afterwards.
+        """
+        with self._lock:
+            if self._sized or self._shell is None:
+                return
+            self._sized = True
+        self._shell.apply_size(self.width, self.height)
 
     def _on_closed(self):
         if self._shell:

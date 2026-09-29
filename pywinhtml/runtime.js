@@ -240,6 +240,9 @@
   ["click", "dblclick", "change", "input", "submit", "keyup", "mousedown"].forEach(delegate);
   root.classList.add("win-desktop");
 
+  // Tell Python the page is up. It applies the requested window size from
+  // here: done any earlier, WinForms' own layout still overrides it.
+  send("ready").then(function () {}, function () {});
   send("state").then(function (state) { win._emit("__state", [state]); }, function () {});
   window.dispatchEvent(new CustomEvent("winready", { detail: win }));
 })();

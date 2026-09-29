@@ -67,8 +67,11 @@ cannot paint over it:
 | --- | --- |
 | `"#DDDDDD"` | the default, a light grey line |
 | any `"#RRGGBB"` | that colour |
-| `None` | no border at all |
+| `None` | Windows' `DWMWA_COLOR_NONE` - which it paints **black**, not invisible |
 | `"default"` | whatever Windows would use on its own |
+
+For an invisible border, give it the page's own background colour
+(`border_color="#FFFFFF"` for a white page) rather than `None`.
 
 ## Python side
 
@@ -156,6 +159,14 @@ The window title comes from the page's `<title>`.
   client area cover the whole window. Because that also takes over
   `WM_GETMINMAXINFO`, the minimum size and the maximized bounds (work area
   only, never over the taskbar) are filled in by hand.
+- **The browser hangs one pixel below the window.** WebView2 leaves its last
+  device-pixel row composited with almost no alpha - a bright green page comes
+  out as `(0, 1, 0)` there - which reads as a black hairline along the bottom,
+  and it grows to several rows while a text field has focus. Whether it shows
+  depends on the exact pixel height (750 shows it, 748 does not), so the fix is
+  to let the browser paint one row past the client area and have Windows clip
+  it. The cost: the page's viewport is about 2 CSS pixels taller than what you
+  see, so content pinned to the very bottom edge is cut by that much.
 - **DPI:** the app asks for per-monitor awareness and handles `WM_DPICHANGED`.
   Below per-monitor awareness Windows stretches, and visibly blurs, the window
   whenever the monitor scale differs from the system scale.

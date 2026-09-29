@@ -38,6 +38,7 @@ SW_SHOW     = 5
 SW_MINIMIZE = 6
 SW_RESTORE  = 9
 
+WM_SIZE          = 0x0005
 WM_NCCALCSIZE    = 0x0083
 WM_GETMINMAXINFO = 0x0024
 WM_NCDESTROY     = 0x0082
@@ -59,6 +60,9 @@ DWMWA_COLOR_NONE    = 0xFFFFFFFE
 
 # One frame at ~120 Hz; the gesture loop runs at this rate.
 GESTURE_TICK = 0.008
+# apply_size() verifies itself this many times, this far apart.
+SIZE_ATTEMPTS = 8
+SIZE_RETRY = 0.1
 # Safety net: no gesture may run longer than this.
 GESTURE_TIMEOUT = 120.0
 
@@ -151,6 +155,17 @@ def _window_rect(hwnd):
     return rect
 
 
+def client_size(hwnd):
+    """Client area in device pixels, straight from Windows.
+
+    WinForms' own ClientSize lags while WM_SIZE is being handled, so anything
+    that has to match the window exactly asks Windows instead.
+    """
+    rect = wintypes.RECT()
+    user32.GetClientRect(hwnd, ctypes.byref(rect))
+    return rect.right, rect.bottom
+
+
 def _cursor_pos():
     point = wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(point))
@@ -196,6 +211,8 @@ class WindowShell:
         self.border_color = border_color
         # Runs a callable on the window's own UI thread; see _place().
         self.invoker = invoker
+        # Called on the UI thread after every WM_SIZE; see _wnd_proc().
+        self.resize_hook = None
         self._old_proc = None
         self._proc_ref = None
         self._gesture = None
@@ -265,6 +282,16 @@ class WindowShell:
                                 SWP_NOZORDER | SWP_NOACTIVATE)
             return 0
 
+        if msg == WM_SIZE and self.resize_hook is not None:
+            # Let the form lay its children out first, then correct them.
+            # This runs on the UI thread, so the hook can touch the controls.
+            result = user32.CallWindowProcW(self._old_proc, hwnd, msg, wparam, lparam)
+            try:
+                self.resize_hook()
+            except Exception:
+                pass
+            return result
+
         if msg == WM_NCDESTROY:
             old = self._old_proc
             self.detach()
@@ -330,32 +357,53 @@ class WindowShell:
         Once the frame is gone the client area equals the window area, so the
         size WinForms picked (which still allowed for a frame) is corrected here.
 
-        It is applied as two steps on purpose. WebView2 only lays the page out
-        again when the client area really changes, so on the first open the
-        page would otherwise keep the viewport it was given before the frame
-        was stripped and leave an unpainted band along the bottom edge.
+        The size is set, checked, and set again until it sticks. While the page
+        is coming up WinForms re-applies its own layout, and a size set a
+        moment too early is silently overridden - the window then stays short
+        by the height of the frame that is no longer there, and the page keeps
+        a viewport that does not reach the bottom edge.
+
+        The very first attempt goes one pixel over and back, because WebView2
+        only lays the page out again when the client area really changes.
         """
         if not self._alive() or self.is_maximized():
             return
         scale = _dpi_scale(self.hwnd)
         want_w, want_h = int(width * scale), int(height * scale)
 
-        rect = _window_rect(self.hwnd)
-        have_w, have_h = rect.right - rect.left, rect.bottom - rect.top
-        x = rect.left + (have_w - want_w) // 2
-        y = rect.top + (have_h - want_h) // 2
-        flags = SWP_NOZORDER | SWP_FRAMECHANGED
+        def attempt(nudge):
+            rect = _window_rect(self.hwnd)
+            have_w = rect.right - rect.left
+            have_h = rect.bottom - rect.top
+            if (have_w, have_h) == (want_w, want_h):
+                return True
 
-        def apply():
-            user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h + 1, flags)
-            user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h, flags)
+            x = rect.left + (have_w - want_w) // 2
+            y = rect.top + (have_h - want_h) // 2
+            flags = SWP_NOZORDER | SWP_FRAMECHANGED
 
-        self._placed = None
-        invoker = self.invoker
-        if invoker is None:
-            apply()
-        else:
-            invoker(apply)
+            def apply():
+                if nudge:
+                    user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h + 1, flags)
+                user32.SetWindowPos(self.hwnd, 0, x, y, want_w, want_h, flags)
+
+            self._placed = None
+            invoker = self.invoker
+            if invoker is None:
+                apply()
+            else:
+                invoker(apply)
+            return False
+
+        def loop():
+            for step in range(SIZE_ATTEMPTS):
+                if not self._alive() or self.is_maximized():
+                    return
+                if attempt(step == 0):
+                    return
+                time.sleep(SIZE_RETRY)
+
+        threading.Thread(target=loop, daemon=True).start()
 
     # --- mouse gestures --------------------------------------------------
     def begin_drag(self):
